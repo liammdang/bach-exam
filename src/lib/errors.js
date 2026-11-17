@@ -9,6 +9,7 @@ const MESSAGES = {
   PHASE_CLOSED: 'Phần thi này đã hết giờ, không lưu thêm được.',
   ALREADY_SUBMITTED: 'Bài đã nộp, không sửa được nữa.',
   SUBMIT_NOT_YET: 'Chỉ nộp bài được khi đã đến phần Schreiben.',
+  NO_NEXT: 'Đây là phần cuối, hãy bấm "Nộp bài".',
   WRONG_SECTION: 'Câu này không thuộc phần đang thi.',
   NOT_ADMIN: 'Tài khoản này không có quyền giáo viên.',
   CODE_TAKEN: 'Mã này đã được dùng cho buổi thi khác.',

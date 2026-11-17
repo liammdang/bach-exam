@@ -7,8 +7,10 @@ import { PHASE_LABEL, SECTIONS, fmtPts, mmss, timeOf } from '../lib/format';
 import { Banner, Button, Card, Modal, Spinner } from '../components/ui';
 import { exportCsv, exportXlsx } from './exportResults';
 
-const NEXT = { lobby: 'hoeren', hoeren: 'lesen', lesen: 'schreiben', schreiben: 'finished' };
-const NEXT_LABEL = { lobby: 'Bắt đầu Hören', hoeren: 'Chuyển sang Lesen', lesen: 'Chuyển sang Schreiben', schreiben: 'Kết thúc bài thi' };
+const NEXT = { lobby: 'hoeren', hoeren: 'finished', lesen: 'finished', schreiben: 'finished' };
+const NEXT_LABEL = { lobby: 'Bắt đầu bài thi', hoeren: 'Kết thúc bài thi', lesen: 'Kết thúc bài thi', schreiben: 'Kết thúc bài thi' };
+const STAGE = [['lobby', 'Chờ bắt đầu'], ['hoeren', 'Đang thi'], ['finished', 'Đã kết thúc']];
+const ATT_PHASE = { lobby: 'Phòng chờ', hoeren: 'Hören', lesen: 'Lesen', schreiben: 'Schreiben' };
 
 export default function SessionPage() {
   const { id } = useParams();
@@ -51,7 +53,7 @@ export default function SessionPage() {
   const s = ov.session;
   const ends = s.phase_ends_at ? new Date(s.phase_ends_at).getTime() : null;
   const remaining = ends ? ends - (now + offset) : null;
-  const running = ['hoeren', 'lesen', 'schreiben'].includes(s.phase);
+  const running = ['hoeren', 'lesen', 'schreiben'].includes(s.phase) && remaining > 0;
   const link = `${window.location.origin}/?code=${s.code}`;
 
   async function act(fn, args) {
@@ -62,10 +64,8 @@ export default function SessionPage() {
     const to = NEXT[s.phase];
     const active = ov.attempts.filter((a) => a.status === 'active').length;
     const body = to === 'finished'
-      ? `Tất cả bài chưa nộp (${active}) sẽ được nộp tự động. Học viên không sửa được nữa.`
-      : to === 'hoeren'
-        ? 'Đồng hồ Hören bắt đầu chạy cho cả lớp. Nhớ phát audio ngay sau khi bấm.'
-        : `Phần ${PHASE_LABEL[s.phase]} sẽ khoá lại, học viên chuyển sang ${PHASE_LABEL[to]}.`;
+      ? `Không bắt buộc: học viên tự nộp, hết giờ Schreiben cũng tự nộp. Bấm Kết thúc sẽ thu ngay ${active} bài chưa nộp.`
+      : 'Đồng hồ Hören bắt đầu chạy cho cả lớp. Nhớ phát audio ngay sau khi bấm. Sau đó học viên tự bấm sang Lesen và Schreiben.';
     setConfirm({ title: NEXT_LABEL[s.phase] + '?', body, run: () => act('exam_admin_set_phase', { p_session_id: s.id, p_phase: to }) });
   }
 
@@ -94,14 +94,15 @@ export default function SessionPage() {
       {/* Điều khiển */}
       <Card className="mt-6 flex flex-wrap items-center gap-6 p-5">
         <div className="flex items-center gap-2">
-          {['lobby', ...SECTIONS.map((x) => x.key), 'finished'].map((p, i) => (
+          {STAGE.map(([p, label], i) => (
             <span key={p} className="flex items-center gap-2">
               {i > 0 && <span className="h-px w-4 bg-line" />}
-              <span className={`rounded-full px-3 py-1 text-sm font-semibold ${s.phase === p ? 'bg-forest text-white' : 'text-forest-300'}`}>{PHASE_LABEL[p]}</span>
+              <span className={`rounded-full px-3 py-1 text-sm font-semibold ${(p === 'hoeren' ? ['hoeren', 'lesen', 'schreiben'].includes(s.phase) : s.phase === p) ? 'bg-forest text-white' : 'text-forest-300'}`}>{label}</span>
             </span>
           ))}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-3">
+          {running && <span className="text-sm text-forest-500">Hören còn</span>}
           {running && (
             <div className={`rounded-lg px-4 py-2 text-2xl font-bold tabular-nums ${remaining <= 0 ? 'bg-paper text-forest-500' : remaining < 120000 ? 'bg-alert-soft text-alert' : 'bg-bblue-50 text-bblue'}`}>
               {remaining <= 0 ? 'Hết giờ' : mmss(remaining)}
@@ -113,7 +114,7 @@ export default function SessionPage() {
             <Button variant="ghost" disabled={busy || remaining <= 0} onClick={() => setConfirm({ title: 'Đóng phần này ngay?', body: 'Học viên không sửa được đáp án của phần này nữa.', run: () => act('exam_admin_adjust_time', { p_session_id: s.id, p_seconds: 0 }) })}>Hết giờ ngay</Button>
           </>}
           {s.phase !== 'finished' && (
-            <Button variant={s.phase === 'schreiben' ? 'danger' : 'blue'} disabled={busy} onClick={nextPhase}>{NEXT_LABEL[s.phase]}</Button>
+            <Button variant={s.phase === 'lobby' ? 'blue' : 'danger'} disabled={busy} onClick={nextPhase}>{NEXT_LABEL[s.phase]}</Button>
           )}
         </div>
       </Card>
@@ -162,9 +163,8 @@ function LiveTable({ ov, now, onAction }) {
         <tbody>
           {ov.attempts.map((a) => {
             const online = now - new Date(a.last_seen_at).getTime() < 15000;
-            const cur = ov.session.phase;
-            // chỉ hiện câu trống của phần đang thi và các phần đã qua
-            const curIdx = cur === 'finished' ? 3 : SECTIONS.findIndex((x) => x.key === cur);
+            const cur = a.phase;
+            const curIdx = a.status === 'submitted' || ov.session.phase === 'finished' ? 3 : SECTIONS.findIndex((x) => x.key === cur);
             const miss = Object.fromEntries(Object.entries(a.missing || {}).filter(([k]) => SECTIONS.findIndex((x) => x.key === k) <= curIdx));
             return (
               <tr key={a.id} className="border-t border-line align-top">
@@ -180,6 +180,7 @@ function LiveTable({ ov, now, onAction }) {
                       <span className={`h-2 w-2 rounded-full ${online ? 'bg-lime-dark' : 'bg-alert'}`} />{online ? 'Đang làm' : 'Mất kết nối'}
                     </span>
                   )}
+                  {a.status !== 'submitted' && <div className="mt-1 text-xs text-forest-500">Đang ở: <b className="text-forest">{ATT_PHASE[a.phase] || '—'}</b>{a.phase_ends_at && a.phase !== 'lobby' ? ` · còn ${mmss(new Date(a.phase_ends_at).getTime() - now)}` : ''}</div>}
                   {a.rejoin_allowed && <div className="mt-1 text-xs text-bblue">Đang chờ vào lại</div>}
                 </td>
                 {SECTIONS.map((x) => (

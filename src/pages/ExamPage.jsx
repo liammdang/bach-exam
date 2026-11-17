@@ -60,6 +60,9 @@ function Exam({ token }) {
   const ex = useExam(token);
   const { state, section, answers, images, locked } = ex;
   const [confirm, setConfirm] = useState(false);
+  const [confirmNext, setConfirmNext] = useState(false);
+  const [nextBusy, setNextBusy] = useState(false);
+  const [nextErr, setNextErr] = useState('');
   const [submitErr, setSubmitErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -69,6 +72,19 @@ function Exam({ token }) {
 
   function goto(id) {
     document.getElementById(`q-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function doNext() {
+    setNextBusy(true);
+    setNextErr('');
+    try {
+      await ex.next();
+      setConfirmNext(false);
+    } catch (e) {
+      setNextErr(friendly(e));
+    } finally {
+      setNextBusy(false);
+    }
   }
 
   async function doSubmit() {
@@ -147,6 +163,7 @@ function Exam({ token }) {
   }
 
   const sec = SECTIONS.find((s) => s.key === state.phase);
+  const nextSec = SECTIONS[SECTIONS.findIndex((s) => s.key === state.phase) + 1];
   const timeUp = locked;
 
   return (
@@ -186,8 +203,10 @@ function Exam({ token }) {
               <SaveStatus save={ex.save} online={ex.online} pendingCount={ex.pendingCount} />
             </div>
           </div>
-          {state.phase === 'schreiben' && (
+          {state.phase === 'schreiben' ? (
             <Button variant="blue" className="mt-4 w-full py-3" onClick={() => setConfirm(true)}>Nộp bài</Button>
+          ) : (
+            <Button variant="primary" className="mt-4 w-full py-3" onClick={() => setConfirmNext(true)}>Sang phần {nextSec?.label} →</Button>
           )}
         </aside>
 
@@ -196,16 +215,16 @@ function Exam({ token }) {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h1 className="font-display text-[34px] font-extrabold leading-none tracking-tight text-forest">{sec?.label}</h1>
               <span className="text-sm text-forest-500">
-                {state.phase === 'hoeren' && 'Nghe audio cô phát qua Google Meet/Zoom và chọn đáp án.'}
-                {state.phase === 'lesen' && 'Đọc kỹ từng văn bản rồi chọn đáp án.'}
+                {state.phase === 'hoeren' && 'Nghe audio cô phát qua Google Meet/Zoom và chọn đáp án. Nghe xong thì bấm "Sang phần Lesen".'}
+                {state.phase === 'lesen' && 'Đọc kỹ từng văn bản rồi chọn đáp án. Làm xong thì bấm "Sang phần Schreiben".'}
                 {state.phase === 'schreiben' && 'Viết xong thì bấm "Nộp bài" ở cột bên trái.'}
               </span>
             </div>
           </div>
           {timeUp && (
             <Banner tone="info">
-              Phần {sec?.label} đã hết giờ, đáp án đã được ghi nhận. Chờ cô chuyển sang phần tiếp theo
-              {state.phase === 'schreiben' ? ' hoặc bấm "Nộp bài".' : '.'}
+              Phần {sec?.label} đã hết giờ, đáp án đã được ghi nhận.
+              {state.phase === 'schreiben' ? ' Bài sẽ được nộp tự động.' : ' Trang sẽ tự chuyển sang phần tiếp theo.'}
             </Banner>
           )}
           {!section ? (
@@ -218,6 +237,18 @@ function Exam({ token }) {
           <SourceNote className="pt-8" />
         </main>
       </div>
+
+      <Modal open={confirmNext} title={`Sang phần ${nextSec?.label}?`} onClose={() => !nextBusy && setConfirmNext(false)}
+        actions={<>
+          <Button variant="ghost" disabled={nextBusy} onClick={() => setConfirmNext(false)}>Làm tiếp</Button>
+          <Button variant="primary" disabled={nextBusy} onClick={doNext}>{nextBusy ? 'Đang chuyển…' : `Sang phần ${nextSec?.label}`}</Button>
+        </>}>
+        {missing.length > 0
+          ? <p>Phần {sec?.label} còn <b>{missing.length}</b> câu chưa làm ({missing.map((m) => m.data.num).join(', ')}).</p>
+          : <p>Bạn đã làm đủ các câu của phần {sec?.label}.</p>}
+        <p className="mt-2">Sau khi chuyển, bạn sẽ không quay lại phần {sec?.label} được nữa.</p>
+        {nextErr && <Banner tone="warn" className="mt-3">{nextErr}</Banner>}
+      </Modal>
 
       <Modal open={confirm} title="Nộp bài?" onClose={() => !submitting && setConfirm(false)}
         actions={<>

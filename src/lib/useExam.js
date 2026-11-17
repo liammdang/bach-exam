@@ -158,10 +158,27 @@ export function useExam(token) {
     setSection(null);
   }, [attemptId]);
 
+  const next = useCallback(async () => {
+    clearTimeout(flushTimer.current);
+    if (Object.keys(pending.current).length) {
+      const snapshot = { ...pending.current };
+      await rpc(studentDb, 'exam_save', { p_token: token, p_values: snapshot }, { retries: 3 }).catch(() => {});
+      pending.current = {};
+      clearPending(attemptId);
+    }
+    await rpc(studentDb, 'exam_next', { p_token: token }, { retries: 3 });
+    const s = await rpc(studentDb, 'exam_state', { p_token: token });
+    loadedKey.current = `${s.phase}|${s.status}|${s.phase_started_at}`;
+    setState(s);
+    if (s.status === 'active' && ['hoeren', 'lesen', 'schreiben'].includes(s.phase)) await loadSection();
+    else setSection(null);
+    window.scrollTo(0, 0);
+  }, [attemptId, loadSection]); // eslint-disable-line
+
   const endsAt = state?.phase_ends_at ? new Date(state.phase_ends_at).getTime() : null;
   const remaining = endsAt ? endsAt - (now + offset) : null;
   const locked = !state || state.status !== 'active' || !endsAt || remaining <= 0;
   const pendingCount = Object.keys(pending.current).length;
 
-  return { state, section, answers, images, save, online, fatal, remaining, locked, pendingCount, setAnswer, submit, flushNow: flush };
+  return { state, section, answers, images, save, online, fatal, remaining, locked, pendingCount, setAnswer, submit, next, flushNow: flush };
 }
